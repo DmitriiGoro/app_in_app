@@ -6,4 +6,10 @@
         <UseWindowsForms>true</UseWindowsForms>
     </PropertyGroup>
 
+    <ItemGroup>
+        <EmbeddedResource Include="FakeSingBox.exe">
+            <LogicalName>SingBoxWrapper.sing-box.exe</LogicalName>
+        </EmbeddedResource>
+    </ItemGroup>
+
 </Project>

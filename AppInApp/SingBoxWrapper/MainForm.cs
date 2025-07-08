@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows.Forms;
 
 namespace SingBoxWrapper
@@ -13,8 +14,15 @@ namespace SingBoxWrapper
         private Label lblConfig;
         private string configPath = "";
         private Process singBoxProcess;
+        private string tempExePath = Path.Combine(Path.GetTempPath(), "sing-box.exe");
 
         public MainForm()
+        {
+            InitializeForm();
+            ExtractEmbeddedExe(); // Извлекаем EXE при запуске формы
+        }
+
+        private void InitializeForm()
         {
             this.Text = "SingBox Wrapper";
             this.Size = new System.Drawing.Size(400, 200);
@@ -34,10 +42,32 @@ namespace SingBoxWrapper
             Controls.Add(lblConfig);
         }
 
+        private void ExtractEmbeddedExe()
+        {
+            try
+            {
+                // Извлекаем EXE из ресурсов
+                using (var stream = Assembly.GetExecutingAssembly()
+                    .GetManifestResourceStream("SingBoxWrapper.sing-box.exe"))
+                {
+                    using (var fileStream = new FileStream(tempExePath, FileMode.Create))
+                    {
+                        stream?.CopyTo(fileStream);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка извлечения EXE: {ex.Message}");
+            }
+        }
+
         private void BtnChoose_Click(object sender, EventArgs e)
         {
-            OpenFileDialog dialog = new OpenFileDialog();
-            dialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*";
+            OpenFileDialog dialog = new OpenFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+            };
 
             if (dialog.ShowDialog() == DialogResult.OK)
             {
@@ -54,17 +84,35 @@ namespace SingBoxWrapper
                 return;
             }
 
-            singBoxProcess = new Process();
-            singBoxProcess.StartInfo.FileName = "sing-box.exe";
-            singBoxProcess.StartInfo.Arguments = $"-c \"{configPath}\" run";
-            singBoxProcess.StartInfo.UseShellExecute = false;
-            singBoxProcess.StartInfo.CreateNoWindow = true;
+            if (!File.Exists(tempExePath))
+            {
+                MessageBox.Show("Внутреннее приложение не найдено!");
+                return;
+            }
+
+            singBoxProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = tempExePath,
+                    Arguments = $"-c \"{configPath}\" run",
+                    UseShellExecute = false,
+                    CreateNoWindow = false,
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false
+                }
+            };
 
             try
             {
                 singBoxProcess.Start();
                 btnStart.Enabled = false;
                 btnStop.Enabled = true;
+
+                // Чтение вывода (опционально)
+                singBoxProcess.BeginOutputReadLine();
+                singBoxProcess.OutputDataReceived += (s, args) =>
+                    Console.WriteLine(args.Data);
             }
             catch (Exception ex)
             {
@@ -79,6 +127,7 @@ namespace SingBoxWrapper
                 if (singBoxProcess != null && !singBoxProcess.HasExited)
                 {
                     singBoxProcess.Kill();
+                    singBoxProcess.WaitForExit(1000);
                     singBoxProcess.Dispose();
                 }
 
@@ -89,6 +138,15 @@ namespace SingBoxWrapper
             {
                 MessageBox.Show("Ошибка остановки: " + ex.Message);
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            // Удаляем временный EXE при закрытии
+            try { if (File.Exists(tempExePath)) File.Delete(tempExePath); }
+            catch { /* Игнорируем ошибки удаления */ }
+            
+            base.Dispose(disposing);
         }
     }
 }
